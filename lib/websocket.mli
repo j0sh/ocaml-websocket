@@ -24,10 +24,16 @@
     unframing of messages, using Lwt streams. Thus the communicating
     with the websocket server (or client) is done using an Lwt stream
     and corresponding push function.
-
-    TODO: Currently the functions returning streams lack a way to
-    close the underlying connection, causing fds to leak.
 *)
+
+module CxnState : sig
+    type t
+
+    val id : t -> int
+    val uri : t -> Uri.t
+    val close : t -> unit Lwt.t
+    val create : Uri.t -> Lwt_io.input_channel -> Lwt_io.output_channel -> t
+end
 
 module Frame : sig
   type opcode =
@@ -74,7 +80,7 @@ val establish_server :
   ?buffer_size:int ->
   ?backlog:int ->
   Unix.sockaddr ->
-  (Uri.t -> Frame.t Lwt_stream.t * (Frame.t option -> unit) -> unit Lwt.t) -> Lwt_io_ext.server
+  (CxnState.t -> Frame.t Lwt_stream.t * (Frame.t option -> unit) -> unit Lwt.t) -> Lwt_io_ext.server
 (** Function in the spirit of [Lwt_io.establish_server], except
     that the provided function takes a stream and a push function
     instead of two channels. Please refer to the [Lwt_io] doc for

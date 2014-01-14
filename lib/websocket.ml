@@ -60,6 +60,30 @@ exception Not_implemented
 
 let websocket_uuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
+module CxnState = struct
+    type t = {
+        id : int;
+        uri: Uri.t;
+        oc: Lwt_io.output_channel;
+        ic: Lwt_io.input_channel
+    }
+
+    let global_id = ref 0
+    let id  c = c.id
+    let uri c = c.uri
+
+    let create uri ic oc =
+        let id = !global_id in
+        incr global_id;
+        {id; uri; ic; oc}
+
+    let close c =
+        let oc = c.oc in
+        let ic = c.ic in
+        try_lwt Lwt_io.close oc with _ -> Lwt.return_unit >>
+        try_lwt Lwt_io.close ic with _ -> Lwt.return_unit
+end
+
 module Frame = struct
   type opcode =
     [ `Continuation
@@ -296,6 +320,7 @@ let establish_server ?(tls = false) ?buffer_size ?backlog sockaddr f =
     and uri     = C.Request.uri request
     and headers = C.Request.headers request in
     let key = Opt.run_exc @@ C.Header.get headers "sec-websocket-key" in
+    let st = CxnState.create uri ic oc in
     lwt () =
       (assert_lwt version = `HTTP_1_1) >>
       (assert_lwt meth = `GET) >>
@@ -315,7 +340,7 @@ let establish_server ?(tls = false) ?buffer_size ?backlog sockaddr f =
     in
     Lwt.pick [read_frames ic push_in;
           write_frames ~masked:false stream_out oc;
-          f uri (stream_in, push_out)]
+          f st (stream_in, push_out)]
   in
   Lwt.async_exception_hook := (fun exn -> Printf.printf "EXN: %s\n%!" (Printexc.to_string exn));
   Lwt_io_ext.establish_server
