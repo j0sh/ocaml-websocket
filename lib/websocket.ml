@@ -67,6 +67,7 @@ module CxnState = struct
         oc: Lwt_io.output_channel;
         ic: Lwt_io.input_channel
     }
+    type event = Open of t | Close of t | Error of t * string
 
     let global_id = ref 0
     let id  c = c.id
@@ -202,6 +203,17 @@ let rec read_frames ic push =
   let () = push (Some (Frame.of_string ~opcode ~extension ~final content)) in
   read_frames ic push
 
+let read_frames_ex ?(ev = fun _ -> ()) c ic push =
+    let read () = read_frames ic push in
+    let err exn =
+        let st = match exn with
+            | Lwt.Canceled | End_of_file -> CxnState.Close c
+            | e -> CxnState.Error (c, (Printexc.to_string e)) in
+        CxnState.close c >> Lwt.return (
+        push None;
+        ev st ) in
+    Lwt.catch read err
+
 (* Good enough, and do not eat entropy *)
 let myrng = CK.Random.device_rng "/dev/urandom"
 
@@ -310,7 +322,7 @@ let with_connection ?(tls = false) ?(extra_headers = []) uri f =
   lwt stream_in, push_out = open_connection ~tls ~extra_headers uri in
   f (stream_in, push_out)
 
-let establish_server ?(tls = false) ?buffer_size ?backlog sockaddr f =
+let establish_server ?(tls = false) ?buffer_size ?backlog ?ev sockaddr f =
   let server_fun (ic, oc) =
     let stream_in, push_in   = Lwt_stream.create ()
     and stream_out, push_out = Lwt_stream.create () in
@@ -341,7 +353,8 @@ let establish_server ?(tls = false) ?buffer_size ?backlog sockaddr f =
       ~headers:response_headers () in
     lwt () = CU.Response.write (fun _ _ -> Lwt.return ()) response oc
     in
-    Lwt.pick [read_frames ic push_in;
+    ignore (Opt.map ev (fun e -> e (CxnState.Open st)));
+    Lwt.pick [read_frames_ex ?ev st ic push_in;
           write_frames ~masked:false stream_out oc;
           f st (stream_in, push_out)]
   in

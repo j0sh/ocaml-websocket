@@ -28,6 +28,7 @@
 
 module CxnState : sig
     type t
+    type event = Open of t | Close of t | Error of t * string
 
     val id : t -> int
     val uri : t -> Uri.t
@@ -79,6 +80,7 @@ val establish_server :
   ?tls:bool ->
   ?buffer_size:int ->
   ?backlog:int ->
+  ?ev:(CxnState.event -> unit) ->
   Unix.sockaddr ->
   (CxnState.t -> Frame.t Lwt_stream.t * (Frame.t option -> unit) -> unit Lwt.t) -> Lwt_io_ext.server
 (** Function in the spirit of [Lwt_io.establish_server], except
