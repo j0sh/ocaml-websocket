@@ -65,7 +65,8 @@ module CxnState = struct
         id : int;
         uri: Uri.t;
         oc: Lwt_io.output_channel;
-        ic: Lwt_io.input_channel
+        ic: Lwt_io.input_channel;
+        mutable closed : bool;
     }
     type event = Open of t | Close of t | Error of t * string
 
@@ -74,15 +75,19 @@ module CxnState = struct
     let uri c = c.uri
 
     let create uri ic oc =
+        let closed = false in
         let id = !global_id in
         incr global_id;
-        {id; uri; ic; oc}
+        {id; uri; ic; oc; closed;}
 
     let close c =
+        if c.closed then Lwt.return_unit else (
+        c.closed <- true;
         let oc = c.oc in
         let ic = c.ic in
         try_lwt Lwt_io.close oc with _ -> Lwt.return_unit >>
         try_lwt Lwt_io.close ic with _ -> Lwt.return_unit
+        )
 end
 
 module Frame = struct
@@ -207,7 +212,7 @@ let read_frames_ex ?(ev = fun _ -> ()) c ic push =
     let read () = read_frames ic push in
     let err exn =
         let st = match exn with
-            | Lwt.Canceled | End_of_file -> CxnState.Close c
+            | Lwt.Canceled | Lwt_io.Channel_closed _ | End_of_file | Unix.Unix_error (Unix.EBADF, _, _) -> CxnState.Close c
             | e -> CxnState.Error (c, (Printexc.to_string e)) in
         CxnState.close c >> Lwt.return (
         push None;
