@@ -40,7 +40,7 @@ let with_connection ?(extra_headers = Cohttp.Header.init ())
       then Lwt.fail @@ HTTP_Error C.Code.(string_of_status status)
       else if not (C.Response.version response = `HTTP_1_1
                    && status = `Switching_protocols
-                   && CCOpt.map String.lowercase_ascii @@
+                   && CCOpt.map String.lowercase @@
                    C.Header.get headers "upgrade" = Some "websocket"
                    && upgrade_present headers
                    && C.Header.get headers "sec-websocket-accept" =
@@ -95,7 +95,7 @@ let establish_server ?timeout ?stop ?random_string ~ctx ~mode react =
     if not (
         version = `HTTP_1_1
         && meth = `GET
-        && CCOpt.map String.lowercase_ascii @@
+        && CCOpt.map String.lowercase @@
         C.Header.get headers "upgrade" = Some "websocket"
         && upgrade_present headers
       )
